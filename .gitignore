@@ -12,6 +12,8 @@ src_managed/
 project/boot/
 project/plugins/project/
 out/
+model/
+spark-warehouse/
 
 # Scala-IDE specific
 .scala_dependencies
