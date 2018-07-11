@@ -3,8 +3,11 @@ import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.ml.classification.{MultilayerPerceptronClassificationModel, MultilayerPerceptronClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.{IndexToString, StringIndexer, Word2Vec}
-import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.{Column, Row, SQLContext}
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.functions.concat_ws
+import org.apache.spark.sql.functions.udf
 
 object AbClassifier {
   final val VECTOR_SIZE = 100
@@ -49,43 +52,53 @@ object AbClassifier {
     //test function
     def test():Unit = {
       println("Test function")
-      val parsedRDD = sc.textFile(args(1)).map(_.split("\t")).map(eachRow => {
-        (eachRow(0),eachRow(1).split(" "))
+
+      val schema = StructType(
+        Array(
+          StructField("message",StringType,true)
+        )
+      )
+
+      val parsedRDD = sc.textFile(args(1)).map(eachRow => {
+        ("ham",eachRow.split(" "))
       })
       val msgDF = sqlCtx.createDataFrame(parsedRDD).toDF("label","message")
 
+      msgDF.printSchema
+      msgDF.select("label","message").show(30)
+
+      //将单列test.txt文件转换成Dataframe
       val labelIndexer = new StringIndexer()
         .setInputCol("label")
         .setOutputCol("indexedLabel")
         .fit(msgDF)
 
-      val Array(trainingData, testData) = msgDF.randomSplit(Array(0.8, 0.2))
+      val labelConverter = new IndexToString()
+        .setInputCol("prediction")
+        .setOutputCol("predictedLabel")
+        .setLabels(labelIndexer.labels)
+
+      //显示dataframe
+
       val layers = Array[Int](VECTOR_SIZE,6,5,2)
-      val mlpc = new MultilayerPerceptronClassifier()
-        .setLayers(layers)
-        .setBlockSize(512)
-        .setSeed(1234L)
-        .setMaxIter(128)
-        .setFeaturesCol("features")
-        .setLabelCol("indexedLabel")
-        .setPredictionCol("prediction")
 
       val model=PipelineModel.load("D:\\Harmonycloud\\AIOpsNW\\model\\CNN_model.model")
-      val predictionResultDF = model.transform(testData)
-      //below 2 lines are for debug use
-      predictionResultDF.printSchema
-      predictionResultDF.select("message","label","predictedLabel").show(30)
 
-      val evaluator = new MulticlassClassificationEvaluator()
-        .setLabelCol("indexedLabel")
-        .setPredictionCol("prediction")
-        //  .setMetricName("precision")
-        //Since SPARK-15617 deprecated precision in MulticlassClassificationEvaluator, many ML examples broken.
-        //We should use accuracy to replace precision in these examples.
-        .setMetricName("accuracy")
-      val predictionAccuracy = evaluator.evaluate(predictionResultDF)
-      println("Testing Accuracy is %2.4f".format(predictionAccuracy * 100) + "%")
-        sc.stop
+      val predictionResultDF = model.transform(msgDF)
+      val separator: String = ";"
+      predictionResultDF.printSchema
+      predictionResultDF.filter("predictedLabel = 'spam'").select("message","predictedLabel").show(30)
+
+      /*val stringify = udf((vs: Seq[String]) => vs match {
+        case null => null
+        case _    => s"""[${vs.mkString(",")}]"""
+      })*/
+      //df.withColumn("ArrayOfString", stringify($"ArrayOfString")).write.csv(...)
+      //below 2 lines are for debug use
+      /*predictionResultDF.printSchema
+      predictionResultDF.select("message","label","predictedLabel").show(30)
+      */
+      sc.stop
     }
 
 
@@ -106,6 +119,9 @@ object AbClassifier {
         (eachRow(0),eachRow(1).split(" "))
       })
       val msgDF = sqlCtx.createDataFrame(parsedRDD).toDF("label","message")
+
+      msgDF.printSchema
+      msgDF.select("label","message").show(30)
 
       val labelIndexer = new StringIndexer()
         .setInputCol("label")
@@ -139,7 +155,7 @@ object AbClassifier {
       val model = pipeline.fit(trainingData)
 
       model.save("D:\\Harmonycloud\\AIOpsNW\\model\\CNN_model.model")
-      /*val predictionResultDF = model.transform(testData)
+      val predictionResultDF = model.transform(testData)
       //below 2 lines are for debug use
       predictionResultDF.printSchema
       predictionResultDF.select("message","label","predictedLabel").show(30)
@@ -152,7 +168,7 @@ object AbClassifier {
         //We should use accuracy to replace precision in these examples.
         .setMetricName("accuracy")
       val predictionAccuracy = evaluator.evaluate(predictionResultDF)
-      println("Testing Accuracy is %2.4f".format(predictionAccuracy * 100) + "%")*/
+      println("Testing Accuracy is %2.4f".format(predictionAccuracy * 100) + "%")
       sc.stop
     }
 
