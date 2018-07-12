@@ -17,6 +17,8 @@ object AbClassifier {
 
   //get a connection to mysql database
   def getConnection():Connection={
+    /*val driver = "com.mysql.jdbc.Driver"
+    Class.forName(driver)*/
     DriverManager.getConnection("jdbc:mysql://10.10.101.115:3306/ai_ops","root","123456")
   }
 
@@ -37,6 +39,7 @@ object AbClassifier {
 
     //val conf = new SparkConf().setAppName("SMS Message Classification (HAM or SPAM)")
     val sc = new SparkContext(conf)
+    sc.addJar("/root/mysql-connector-java-6.0.4.jar")
     val sqlCtx = new SQLContext(sc)
 
     if(args(1)=="train") {
@@ -45,10 +48,11 @@ object AbClassifier {
         sys.exit(1)
       }
         train()
+
       }
-    else if(args(1)=="test"){
-      if (args.length < 3) {
-        println("Usage:master mode(test) File-Path")
+    else if(args(1)=="run"){
+      if (args.length < 4) {
+        println("Usage:master mode(test) File-Path ID")
         sys.exit(1)
       }
         test()
@@ -112,8 +116,17 @@ object AbClassifier {
       时间戳
       transformMessDF.repartition(1).write.csv("data/test"+time1+".csv")//异常输出保存地址
       */
-      transformMessDF.repartition(1).write.csv("hdfs://10.10.101.115:9000/mllib/multi-NW/output/test.csv")//异常输出保存地址
-      sc.stop
+      var Job_out_Path="hdfs://10.10.101.115:9000/mllib/multi-NW/output/test"+args(3).toString+".csv"
+      println(Job_out_Path)
+      transformMessDF.repartition(1).write.csv(Job_out_Path)//异常输出保存地址
+
+      val connection_test = getConnection()//invoke a function to get a connection
+      var run_sql="insert into t_job_out_profile values(" + args(3).toInt+",'" + Job_out_Path + "');"
+      println(run_sql)
+      val prepareSta_test: PreparedStatement = connection_test.prepareStatement(run_sql);
+
+      prepareSta_test.executeUpdate()
+
     }
 
     //train function
@@ -158,7 +171,9 @@ object AbClassifier {
 
       val pipeline = new Pipeline().setStages(Array(labelIndexer,word2Vec,mlpc,labelConverter))
       val model = pipeline.fit(trainingData)
-      //val time1=System.currentTimeMillis()获取时间戳
+      val time1=System.currentTimeMillis()//获取时间戳
+
+      //var Model_save_Path="hdfs://10.10.101.115:9000/mllib/multi-NW/model/MultiNW_"+time1+"_"+args(3).toString+"model.model"
       model.save("hdfs://10.10.101.115:9000/mllib/multi-NW/model/MultiNW_model.model")//保存模型地址
 
       val predictionResultDF = model.transform(testData)
