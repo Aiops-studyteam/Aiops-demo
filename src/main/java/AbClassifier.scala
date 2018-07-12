@@ -5,17 +5,31 @@ import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.{IndexToString, StringIndexer, Word2Vec}
 import org.apache.spark.sql.{Column, Row, SQLContext, SparkSession}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
+
+import java.sql.{Connection, DriverManager, PreparedStatement, ResultSet}
+
+import org.apache.http.client.methods.HttpOptions
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.sql.functions.concat_ws
-import org.apache.spark.sql.functions.udf
 
 object AbClassifier {
   final val VECTOR_SIZE = 100
+  //mysql读写
+
+  //get a connection to mysql database
+  def getConnection():Connection={
+    DriverManager.getConnection("jdbc:mysql://10.10.101.115:3306/ai_ops","root","123456")
+  }
+
+
+
+
+
   def main(args: Array[String]) {
-    if (args.length < 3) {
-      println("Usage:master mode(train/test) File-Path")
+    /*if (args.length < 4) {
+      println("Usage:master mode(train) File-Path")
+      println("Usage:master mode(test) File-Path ID")
       sys.exit(1)
-    }
+    }*/
     //LogUtils.setDefaultLogLevel()
 
 
@@ -26,13 +40,22 @@ object AbClassifier {
     val sqlCtx = new SQLContext(sc)
 
     if(args(1)=="train") {
+      if (args.length < 4) {
+        println("Usage:master mode(train) File-Path ID")
+        sys.exit(1)
+      }
         train()
       }
     else if(args(1)=="test"){
+      if (args.length < 3) {
+        println("Usage:master mode(test) File-Path")
+        sys.exit(1)
+      }
         test()
     }
     else{
       println("Usage:master mode(train/test) File-Path")
+      println("Usage:master mode(test) File-Path ID")
       sys.exit(1)
     }
 
@@ -152,7 +175,26 @@ object AbClassifier {
         .setMetricName("accuracy")
       val predictionAccuracy = evaluator.evaluate(predictionResultDF)
       println("Testing Accuracy is %2.4f".format(predictionAccuracy * 100) + "%")
-      sc.stop
+
+
+      //the data should be inserted into MySQL
+      //the database is named "mydatabase",the table's name is employee
+      //the database and table should be created in advance
+      val connection = getConnection()//invoke a function to get a connection
+      val prepareSta: PreparedStatement = connection.prepareStatement("insert into t_model_profile values("+args(3).toInt+"," + predictionAccuracy + ",'0');");
+      /*val preparedStatement: PreparedStatement = connection.prepareStatement(
+        "select * from t_train_job" )
+      val result: ResultSet = preparedStatement.executeQuery()
+      println("id\tname\tstatus")
+      while(result.next()){
+        print(result.getString("id")+" ")
+        print(result.getString("name")+" ")
+        print(result.getString("status")+" ")
+        println()
+      }
+      */
+      prepareSta.executeUpdate()
+
     }
 
 

@@ -212,5 +212,7 @@
     <orderEntry type="library" name="Maven: org.typelevel:machinist_2.11:0.6.1" level="project" />
     <orderEntry type="library" name="Maven: com.chuusai:shapeless_2.11:2.3.2" level="project" />
     <orderEntry type="library" name="Maven: org.typelevel:macro-compat_2.11:1.1.1" level="project" />
+    <orderEntry type="library" name="Maven: org.scalaj:scalaj-http_2.12:2.3.0" level="project" />
+    <orderEntry type="library" name="Maven: mysql:mysql-connector-java:6.0.4" level="project" />
   </component>
 </module>
