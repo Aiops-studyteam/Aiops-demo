@@ -12,8 +12,8 @@ import org.apache.spark.sql.functions.udf
 object AbClassifier {
   final val VECTOR_SIZE = 100
   def main(args: Array[String]) {
-    if (args.length < 2) {
-      println("Usage:mode(train/test) File-Path")
+    if (args.length < 3) {
+      println("Usage:master mode(train/test) File-Path")
       sys.exit(1)
     }
     //LogUtils.setDefaultLogLevel()
@@ -25,28 +25,16 @@ object AbClassifier {
     val sc = new SparkContext(conf)
     val sqlCtx = new SQLContext(sc)
 
-    if(args(0)=="train") {
+    if(args(1)=="train") {
         train()
       }
-    else if(args(0)=="test"){
+    else if(args(1)=="test"){
         test()
     }
     else{
-      println("Usage:mode(train/test) File-Path")
+      println("Usage:master mode(train/test) File-Path")
       sys.exit(1)
     }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     //test function
@@ -59,7 +47,7 @@ object AbClassifier {
         )
       )
 
-      val parsedRDD = sc.textFile(args(1)).map(eachRow => {
+      val parsedRDD = sc.textFile(args(2)).map(eachRow => {
         ("ham",eachRow.split(" "))
       })
       val msgDF = sqlCtx.createDataFrame(parsedRDD).toDF("label","message")
@@ -78,18 +66,16 @@ object AbClassifier {
         .setOutputCol("predictedLabel")
         .setLabels(labelIndexer.labels)
 
-      //显示dataframe
 
       val layers = Array[Int](VECTOR_SIZE,6,5,2)
 
-      val model=PipelineModel.load("D:\\Harmonycloud\\AIOpsNW\\model\\CNN_model.model")
+      val model=PipelineModel.load("hdfs://10.10.101.115:9000/mllib/multi-NW/model/MultiNW_model.model")//加载模型地址
 
       val predictionResultDF = model.transform(msgDF)
 
       predictionResultDF.show(30)
 
       var resultDF=predictionResultDF.filter("predictedLabel = 'spam'").select("message").toDF("message")
-
 
       val sparkSession = SparkSession.builder.getOrCreate()
       import sparkSession.implicits._
@@ -98,35 +84,21 @@ object AbClassifier {
        .toDF( "message")
       transformMessDF.printSchema
       transformMessDF.select("message").show(30)
-      transformMessDF.repartition(1).write.csv("data/test.csv")
-      /*val stringify = udf((vs: Seq[String]) => vs match {
-        case null => null
-        case _    => s"""[${vs.mkString(",")}]"""
-      })*/
-      //df.withColumn("ArrayOfString", stringify($"ArrayOfString")).write.csv(...)
-      //below 2 lines are for debug use
-      /*predictionResultDF.printSchema
-      predictionResultDF.select("message","label","predictedLabel").show(30)
+      /*
+      val time1=System.currentTimeMillis()
+      时间戳
+      transformMessDF.repartition(1).write.csv("data/test"+time1+".csv")//异常输出保存地址
       */
+      transformMessDF.repartition(1).write.csv("hdfs://10.10.101.115:9000/mllib/multi-NW/output/test.csv")//异常输出保存地址
       sc.stop
     }
-
-
-
-
-
-
-
-
-
-
-
 
     //train function
     def train(): Unit = {
 
-      val parsedRDD = sc.textFile(args(1)).map(_.split("\t")).map(eachRow => {
+      val parsedRDD = sc.textFile(args(2)).map(_.split("\t")).map(eachRow => {
         (eachRow(0),eachRow(1).split(" "))
+
       })
       val msgDF = sqlCtx.createDataFrame(parsedRDD).toDF("label","message")
 
@@ -163,8 +135,9 @@ object AbClassifier {
 
       val pipeline = new Pipeline().setStages(Array(labelIndexer,word2Vec,mlpc,labelConverter))
       val model = pipeline.fit(trainingData)
+      //val time1=System.currentTimeMillis()获取时间戳
+      model.save("hdfs://10.10.101.115:9000/mllib/multi-NW/model/MultiNW_model.model")//保存模型地址
 
-      model.save("D:\\Harmonycloud\\AIOpsNW\\model\\CNN_model.model")
       val predictionResultDF = model.transform(testData)
       //below 2 lines are for debug use
       predictionResultDF.printSchema
