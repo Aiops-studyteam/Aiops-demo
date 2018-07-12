@@ -3,7 +3,7 @@ import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.ml.classification.{MultilayerPerceptronClassificationModel, MultilayerPerceptronClassifier}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.{IndexToString, StringIndexer, Word2Vec}
-import org.apache.spark.sql.{Column, Row, SQLContext}
+import org.apache.spark.sql.{Column, Row, SQLContext, SparkSession}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.functions.concat_ws
@@ -85,10 +85,20 @@ object AbClassifier {
       val model=PipelineModel.load("D:\\Harmonycloud\\AIOpsNW\\model\\CNN_model.model")
 
       val predictionResultDF = model.transform(msgDF)
-      val separator: String = ";"
-      predictionResultDF.printSchema
-      predictionResultDF.filter("predictedLabel = 'spam'").select("message","predictedLabel").show(30)
 
+      predictionResultDF.show(30)
+
+      var resultDF=predictionResultDF.filter("predictedLabel = 'spam'").select("message").toDF("message")
+
+
+      val sparkSession = SparkSession.builder.getOrCreate()
+      import sparkSession.implicits._
+      var transformMessDF=resultDF.as[(Array[String])]
+       .map { case (message) => (message.mkString(", ") ) }
+       .toDF( "message")
+      transformMessDF.printSchema
+      transformMessDF.select("message").show(30)
+      transformMessDF.repartition(1).write.csv("data/test.csv")
       /*val stringify = udf((vs: Seq[String]) => vs match {
         case null => null
         case _    => s"""[${vs.mkString(",")}]"""
