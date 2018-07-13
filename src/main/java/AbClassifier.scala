@@ -119,12 +119,10 @@ object AbClassifier {
       var Job_out_Path="hdfs://10.10.101.115:9000/mllib/multi-NW/output/test"+args(3).toString+".csv"
       println(Job_out_Path)
       transformMessDF.repartition(1).write.csv(Job_out_Path)//异常输出保存地址
-
       val connection_test = getConnection()//invoke a function to get a connection
       var run_sql="insert into t_job_out_profile values(" + args(3).toInt+",'" + Job_out_Path + "');"
       println(run_sql)
       val prepareSta_test: PreparedStatement = connection_test.prepareStatement(run_sql);
-
       prepareSta_test.executeUpdate()
 
     }
