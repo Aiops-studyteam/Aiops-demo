@@ -5,14 +5,17 @@ import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.{IndexToString, StringIndexer, Word2Vec}
 import org.apache.spark.sql.{Column, Row, SQLContext, SparkSession}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
-import java.sql.{Connection, DriverManager, PreparedStatement, ResultSet}
+import java.sql.{Connection, Date, DriverManager, PreparedStatement, ResultSet, Timestamp}
+import java.text.SimpleDateFormat
+import java.util.Calendar
 
+import Array._
 import com.hankcs.hanlp.tokenizer.NLPTokenizer
 import org.apache.http.client.methods.HttpOptions
 import org.apache.spark.{SparkConf, SparkContext}
 
 object AbClassifier {
-  final val VECTOR_SIZE = 100
+  final val VECTOR_SIZE = 200
   //mysql读写
 
   //get a connection to mysql database
@@ -54,6 +57,7 @@ object AbClassifier {
 
 
 
+
   def main(args: Array[String]) {
     /*if (args.length < 4) {
       println("Usage:master mode(train) File-Path")
@@ -63,11 +67,48 @@ object AbClassifier {
     //LogUtils.setDefaultLogLevel()
 
 
+
+    def myFun(iterator: Iterator[(Row)]): Unit = {
+      //insert abnormal_out into database
+      var conn: Connection = null
+      val today = new java.util.Date()
+      val sql_date = new Timestamp(today.getTime)
+      var ps: PreparedStatement = null
+      val sql = "insert into t_job_out_profile(job_id,job_log_line,time_stamp,feedback_status) values (?, ?, ?, ?);"
+      try {
+        conn = DriverManager.getConnection("jdbc:mysql://10.10.101.115:3306/ai_ops?useUnicode=true&characterEncoding=UTF-8", "root", "123456")
+        iterator.foreach(Row => {
+          ps = conn.prepareStatement(sql)
+          ps.setInt(1, args(3).toInt)
+          println( Row.toString().getClass.getSimpleName )
+          ps.setString(2, Row.toString())
+          ps.setTimestamp(3, sql_date)
+          ps.setInt(4, 0)
+
+          ps.executeUpdate()
+        }
+        )
+      } catch {
+        case e: Exception => println(e)
+      } finally {
+        if (ps != null) {
+          ps.close()
+        }
+        if (conn != null) {
+          conn.close()
+        }
+      }
+    }
+
+
+
+
+
     val conf = new SparkConf().setMaster("local").setAppName("SMS Message Classification (HAM or SPAM)")
 
     //val conf = new SparkConf().setAppName("SMS Message Classification (HAM or SPAM)")
     val sc = new SparkContext(conf)
-    sc.addJar("/root/mysql-connector-java-6.0.4.jar")
+    //sc.addJar("/root/mysql-connector-java-6.0.4.jar")
     val sqlCtx = new SQLContext(sc)
 
     if(args(1)=="train") {
@@ -80,14 +121,14 @@ object AbClassifier {
       }
     else if(args(1)=="run"){
       if (args.length < 4) {
-        println("Usage:master mode(test) File-Path ID")
+        println("Usage:master mode(run) File-Path ID")
         sys.exit(1)
       }
         test()
     }
     else{
-      println("Usage:master mode(train/test) File-Path")
-      println("Usage:master mode(test) File-Path ID")
+      println("Usage:master mode(train/run) File-Path")
+      println("Usage:master mode(run) File-Path ID")
       sys.exit(1)
     }
 
@@ -122,7 +163,7 @@ object AbClassifier {
         .setLabels(labelIndexer.labels)
 
 
-      val layers = Array[Int](VECTOR_SIZE,50,20,10,2)
+      //val layers = Array[Int](VECTOR_SIZE,50,20,10,2)
 
       val model=PipelineModel.load("hdfs://10.10.101.115:9000/mllib/multi-NW/model/MultiNW_model.model")//加载模型地址
 
@@ -144,14 +185,17 @@ object AbClassifier {
       时间戳
       transformMessDF.repartition(1).write.csv("data/test"+time1+".csv")//异常输出保存地址
       */
-      var Job_out_Path="hdfs://10.10.101.115:9000/mllib/multi-NW/output/test"+args(3).toString+".csv"
-      println(Job_out_Path)
-      transformMessDF.repartition(1).write.csv(Job_out_Path)//异常输出保存地址
-      val connection_test = getConnection()//invoke a function to get a connection
+      //var Job_out_Path="hdfs://10.10.101.115:9000/mllib/multi-NW/output/test"+args(3).toString+".csv"
+      //println(Job_out_Path)
+      //transformMessDF.repartition(1).write.csv(Job_out_Path)//异常输出保存地址
+      /*val connection_test = getConnection()//invoke a function to get a connection
+
       var run_sql="insert into t_job_out_profile values(" + args(3).toInt+",'" + Job_out_Path + "');"
       println(run_sql)
       val prepareSta_test: PreparedStatement = connection_test.prepareStatement(run_sql);
       prepareSta_test.executeUpdate()
+      */
+      transformMessDF.rdd.foreachPartition(myFun)//插入数据库
 
     }
 
@@ -179,12 +223,12 @@ object AbClassifier {
         .setVectorSize(VECTOR_SIZE)
         .setMinCount(1)
 
-      val layers = Array[Int](VECTOR_SIZE,8,6,2)
+      val layers = Array[Int](VECTOR_SIZE,80,5,2)
       val mlpc = new MultilayerPerceptronClassifier()
         .setLayers(layers)
         .setBlockSize(512)
         .setSeed(1234L)
-        .setMaxIter(128)
+        .setMaxIter(512)
         .setFeaturesCol("features")
         .setLabelCol("indexedLabel")
         .setPredictionCol("prediction")
@@ -194,14 +238,14 @@ object AbClassifier {
         .setOutputCol("predictedLabel")
         .setLabels(labelIndexer.labels)
 
-      val Array(trainingData, testData) = msgDF.randomSplit(Array(0.8, 0.2))
+      val Array(trainingData, testData) = msgDF.randomSplit(Array(0.9, 0.1))
 
       val pipeline = new Pipeline().setStages(Array(labelIndexer,word2Vec,mlpc,labelConverter))
       val model = pipeline.fit(trainingData)
       val time1=System.currentTimeMillis()//获取时间戳
 
       //var Model_save_Path="hdfs://10.10.101.115:9000/mllib/multi-NW/model/MultiNW_"+time1+"_"+args(3).toString+"model.model"
-      model.save("hdfs://10.10.101.115:9000/mllib/multi-NW/model/MultiNW_model.model")//保存模型地址
+      model.write.overwrite().save("hdfs://10.10.101.115:9000/mllib/multi-NW/model/MultiNW_model.model")//保存模型地址
 
       val predictionResultDF = model.transform(testData)
       //below 2 lines are for debug use
